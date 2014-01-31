@@ -5,6 +5,8 @@
         var that = this;
         this.http    =require("http");
         this.server  =this.http.createServer();
+        this.exec    =require('child_process').exec;
+        this.chile   =null;
         this.url     =require("url");
         this.path    =require("path");
         this.fs      =require("fs");
@@ -14,6 +16,7 @@
         this.request =null;
         this.response=null;
         this.resImg  =null;
+        this.fileBin ='/usr/bin/file';
         this.img     = {
             path: '/Users/pjobson/bin/img/',
             src:  null,
@@ -31,7 +34,6 @@
         });
         
         this.server.on('request', function (request, response) {
-            console.log('request');
             that.response = response;
             that.request  = request;
             that.setImgParams();
@@ -53,7 +55,7 @@
         this.imageCheck = function() {
             that.fs.stat(that.img.new,function(err,data) {
                 if (data) {
-                    that.serveImage();
+                    that.identifyImage();
                     return true;
                 } else {
                     that.getImage();
@@ -70,7 +72,6 @@
                 });
                 
                 response.on('end',function() {
-                    that.img.contentType = response.headers['content-type'];
                     that.fs.writeFile(that.img.new, that.img.data, {encoding: 'binary'}, function() {
                         that.modImage();
                     });
@@ -80,18 +81,39 @@
             return true;
         };
         
+        this.identifyImage = function() {
+            //contentType
+            var cmd = that.fileBin +' '+ that.img.new;
+            that.child = that.exec(cmd, function(err, stdout, stderr) {
+                if (stderr || err) {
+                    console.log('stderr: '+ stderr);
+                    console.log('error: ' + err);
+                    return;
+                }
+                that.img.contentType = 'image/'+stdout.match(/(\w+) image data/)[1].toLowerCase();
+                that.serveImage();
+                return;
+            });
+        };
+        
         this.modImage = function() {
             that.magick.convert([that.img.new, '-flip', that.img.tmp], function(err, stdout){
-                if (err) throw err;
+                if (err) {
+                    console.log('error: '+ err);
+                    return;
+                }
                 that.fs.rename(that.img.tmp,that.img.new, function() {
-                    that.serveImage();
+                    that.identifyImage();
                 });
             });
         };
         
         this.serveImage = function() {
             that.fs.readFile(that.img.new, function(err,data) {
-                if (err) throw err;
+                if (err) {
+                    console.log('error: '+ err);
+                    return;   
+                }
                 that.response.writeHead(200, {"Content-Type": that.img.contentType});
                 that.response.end(data,'binary');
             });
